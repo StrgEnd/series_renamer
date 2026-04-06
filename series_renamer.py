@@ -2,13 +2,15 @@
 """
 series_renamer.py
 ------------------------
-Core logic + real file renaming + basic CLI interface.
+Core logic + CLI + basic GUI.
 """
 
 import os
 import re
 import sys
 import argparse
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 
@@ -78,6 +80,7 @@ def build_rename_pairs(
         episode += 1
     return pairs
 
+
 def rename_files(pairs: list[tuple[Path, Path]]) -> tuple[int, list[str]]:
     """
     Execute renames. Returns (success_count, error_messages).
@@ -133,6 +136,176 @@ def run_cli(directory: str, start_name: str, dry_run: bool = False) -> None:
         for err in errors:
             print(f"  {err}")
 
+# ---------------------------------------------------------------------------
+# GUI interface (basic)
+# ---------------------------------------------------------------------------
+
+
+class Application(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Series Renamer")
+        self.minsize(600, 400)
+        self._pairs: list[tuple[Path, Path]] = []
+        self._build_ui()
+
+    def _build_ui(self):
+        # Top bar
+        top = ttk.Frame(self, padding=(12, 10, 12, 6))
+        top.pack(fill="x")
+        ttk.Label(top, text="Series Renamer", font=("Segoe UI", 12, "bold")).pack(
+            anchor="w"
+        )
+        ttk.Label(
+            top,
+            text="Batch‑rename TV episode files into a structured format.",
+        ).pack(anchor="w", pady=(2, 0))
+
+        # Separator
+        sep = tk.Frame(self, height=1, bg="#ccc")
+        sep.pack(fill="x", pady=(4, 0))
+
+        # Directory row
+        panel = ttk.Frame(self, padding=(12, 8, 12, 4))
+        panel.pack(fill="x")
+
+        ttk.Label(panel, text="Source directory").grid(
+            row=0, column=0, sticky="w", pady=(0, 4)
+        )
+        dir_row = ttk.Frame(panel)
+        dir_row.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        panel.columnconfigure(0, weight=1)
+
+        self.var_dir = tk.StringVar()
+        ttk.Entry(dir_row, textvariable=self.var_dir).pack(
+            side="left", fill="x", expand=True
+        )
+        ttk.Button(dir_row, text="Browse...", command=self._browse).pack(
+            side="left", padx=(8, 0)
+        )
+
+        # Start name row
+        ttk.Label(panel, text="Start name").grid(
+            row=2, column=0, sticky="w", pady=(0, 4)
+        )
+        ttk.Label(
+            panel,
+            text="Format: Show Name (Year) S01E01",
+        ).grid(row=2, column=0, sticky="e")
+
+        self.var_start = tk.StringVar(value="Dr. House (2004) S01E01")
+        ttk.Entry(panel, textvariable=self.var_start).grid(
+            row=3, column=0, sticky="ew"
+        )
+
+        # Buttons
+        btn_row = ttk.Frame(self, padding=(12, 6, 12, 6))
+        btn_row.pack(fill="x")
+        ttk.Button(btn_row, text="Preview", command=self._preview).pack(
+            side="left"
+        )
+        self.btn_rename = ttk.Button(
+            btn_row,
+            text="Rename files",
+            state="disabled",
+            command=self._rename,
+        )
+        self.btn_rename.pack(side="left", padx=(10, 0))
+
+        # Separator
+        sep2 = tk.Frame(self, height=1, bg="#ccc")
+        sep2.pack(fill="x", pady=(4, 0))
+
+        # Output area
+        out_frame = ttk.Frame(self, padding=(12, 8, 12, 8))
+        out_frame.pack(fill="both", expand=True)
+        self.text_out = tk.Text(
+            out_frame,
+            height=10,
+            font=("Consolas", 9),
+            wrap="none",
+        )
+        text_scroll = tk.Scrollbar(
+            out_frame, orient="vertical", command=self.text_out.yview
+        )
+        self.text_out.configure(yscrollcommand=text_scroll.set)
+        self.text_out.pack(side="left", fill="both", expand=True)
+        text_scroll.pack(side="right", fill="y")
+
+        # Status bar
+        status_frame = ttk.Frame(self, padding=(12, 4, 12, 4))
+        status_frame.pack(fill="x")
+        self.var_status = tk.StringVar(
+            value="Enter directory and start name, then click Preview."
+        )
+        ttk.Label(
+            status_frame,
+            textvariable=self.var_status,
+            foreground="#555",
+            font=("Segoe UI", 9),
+        ).pack(anchor="w")
+
+    def _browse(self):
+        path = filedialog.askdirectory(title="Select directory")
+        if path:
+            self.var_dir.set(path)
+
+    def _preview(self):
+        self.text_out.delete("1.0", "end")
+        self._pairs = []
+        self.btn_rename.configure(state="disabled")
+
+        directory = self.var_dir.get().strip()
+        if not directory or not os.path.isdir(directory):
+            messagebox.showerror("Invalid directory", "Please select a valid directory.")
+            return
+
+        try:
+            show_name, year, season, start_ep = parse_start_name(
+                self.var_start.get()
+            )
+        except ValueError as exc:
+            messagebox.showerror("Format error", str(exc))
+            return
+
+        files = collect_video_files(directory)
+        if not files:
+            self.var_status.set("No video files found in selected directory.")
+            return
+
+        pairs = build_rename_pairs(files, show_name, year, season, start_ep)
+        self._pairs = pairs
+
+        for old, new in pairs:
+            self.text_out.insert("end", f"{old.name}\n")
+            self.text_out.insert("end", f"  → {new.name}\n\n")
+
+        self.var_status.set(
+            f"Preview: {len(pairs)} file(s) ready to rename."
+        )
+        self.btn_rename.configure(state="normal")
+
+    def _rename(self):
+        if not self._pairs:
+            return
+
+        success, errors = rename_files(self._pairs)
+        self._pairs = []
+        self.btn_rename.configure(state="disabled")
+        self.text_out.delete("1.0", "end")
+
+        if errors:
+            messagebox.showwarning(
+                "Partial success",
+                f"{success} file(s) renamed.\n\n"
+                f"{len(errors)} error(s):\n" + "\n".join(errors),
+            )
+        else:
+            messagebox.showinfo(
+                "Done", f"{success} file(s) renamed successfully."
+            )
+
+        self.var_status.set(f"{success} file(s) renamed.")
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -169,26 +342,8 @@ def main():
             parser.error("--cli requires both --dir and --start")
         run_cli(args.dir, args.start, dry_run=args.dry_run)
     else:
-        directory = input("Ordner mit Episoden: ").strip()
-        start_name = input(
-            "Startname (z. B. Dr. House (2004) S01E01): "
-        ).strip()
-        show_name, year, season, start_ep = parse_start_name(start_name)
-        files = collect_video_files(directory)
-        pairs = build_rename_pairs(files, show_name, year, season, start_ep)
-
-        print("\nVorschau:")
-        for old, new in pairs:
-            print(f"  {old.name}")
-            print(f"    → {new.name}\n")
-
-        confirm = input("Renamen? [y/N] ").strip().lower()
-        if confirm == "y":
-            success, errors = rename_files(pairs)
-            print(f"{success} file(s) renamed.")
-            if errors:
-                print("Errors:", *errors, sep="\n  ")
-
+        app = Application()
+        app.mainloop()
 
 
 if __name__ == "__main__":
