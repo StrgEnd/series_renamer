@@ -2,7 +2,7 @@
 """
 series_renamer.py
 ------------------------
-Core logic + CLI + basic GUI.
+Core logic + CLI + GUI with styling, Treeview table and conflict highlighting.
 """
 
 import os
@@ -142,38 +142,145 @@ def run_cli(directory: str, start_name: str, dry_run: bool = False) -> None:
 
 
 class Application(tk.Tk):
+    # ---- Palette ----------------------------------------------------------
+    BG      = "#f4f4f2"
+    SURFACE = "#ffffff"
+    BORDER  = "#ddddd8"
+    TEXT    = "#1c1c1c"
+    MUTED   = "#6b6b6b"
+    ACCENT  = "#2563eb"
+    DANGER  = "#dc2626"
+    SUCCESS = "#16a34a"
+    ROW_ALT = "#f9f9f7"
+
     def __init__(self):
         super().__init__()
         self.title("Series Renamer")
-        self.minsize(600, 400)
+        self.minsize(820, 560)
         self._pairs: list[tuple[Path, Path]] = []
+        self._build_styles()
         self._build_ui()
+    
+    # ---- Styles -----------------------------------------------------------
+    def _build_styles(self):
+        style = ttk.Style(self)
+        style.theme_use("clam")
+
+        style.configure("TFrame", background=self.BG)
+        style.configure("Surface.TFrame", background=self.SURFACE)
+
+        style.configure(
+            "TLabel",
+            background=self.BG,
+            foreground=self.TEXT,
+            font=("Segoe UI", 10),
+        )
+        style.configure(
+            "Title.TLabel",
+            background=self.BG,
+            foreground=self.TEXT,
+            font=("Segoe UI", 16, "bold"),
+        )
+        style.configure(
+            "Caption.TLabel",
+            background=self.BG,
+            foreground=self.MUTED,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "Status.TLabel",
+            background=self.BG,
+            foreground=self.MUTED,
+            font=("Segoe UI", 9),
+        )
+        style.configure(
+            "TEntry",
+            fieldbackground=self.SURFACE,
+            foreground=self.TEXT,
+            bordercolor=self.BORDER,
+            insertcolor=self.TEXT,
+            font=("Segoe UI", 10),
+            padding=(6, 4),
+        )
+        style.configure(
+            "TButton",
+            background=self.SURFACE,
+            foreground=self.TEXT,
+            font=("Segoe UI", 10),
+            bordercolor=self.BORDER,
+            focusthickness=0,
+            padding=(10, 5),
+        )
+        style.map(
+            "TButton",
+            background=[("active", self.BORDER), ("disabled", self.BG)],
+            foreground=[("disabled", self.MUTED)],
+        )
+        style.configure(
+            "Primary.TButton",
+            background=self.ACCENT,
+            foreground="#ffffff",
+            font=("Segoe UI", 10, "bold"),
+            borderwidth=0,
+            padding=(14, 6),
+        )
+        style.map(
+            "Primary.TButton",
+            background=[("active", "#1d4ed8"), ("disabled", "#93c5fd")],
+            foreground=[("disabled", "#ffffff")],
+        )
+        style.configure(
+            "Treeview",
+            background=self.SURFACE,
+            foreground=self.TEXT,
+            fieldbackground=self.SURFACE,
+            rowheight=26,
+            font=("Consolas", 9),
+            borderwidth=0,
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=self.BG,
+            foreground=self.MUTED,
+            font=("Segoe UI", 9, "bold"),
+            borderwidth=0,
+            relief="flat",
+        )
+        style.map(
+            "Treeview",
+            background=[("selected", "#eff6ff")],
+            foreground=[("selected", self.ACCENT)],
+        )
+
+    # ---- UI ---------------------------------------------------------------
 
     def _build_ui(self):
         # Top bar
-        top = ttk.Frame(self, padding=(12, 10, 12, 6))
+        top = ttk.Frame(self, padding=(24, 20, 24, 12))
         top.pack(fill="x")
-        ttk.Label(top, text="Series Renamer", font=("Segoe UI", 12, "bold")).pack(
+        ttk.Label(top, text="Series Renamer", style="Title.TLabel").pack(
             anchor="w"
         )
         ttk.Label(
             top,
             text="Batch‑rename TV episode files into a structured format.",
+            style="Caption.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
         # Separator
-        sep = tk.Frame(self, height=1, bg="#ccc")
-        sep.pack(fill="x", pady=(4, 0))
+        sep = tk.Frame(self, height=1, bg=self.BORDER)
+        sep.pack(fill="x")
 
-        # Directory row
-        panel = ttk.Frame(self, padding=(12, 8, 12, 4))
+        # Input panel
+        panel = ttk.Frame(self, padding=(24, 16, 24, 8))
         panel.pack(fill="x")
 
+        # Directory row
         ttk.Label(panel, text="Source directory").grid(
             row=0, column=0, sticky="w", pady=(0, 4)
         )
         dir_row = ttk.Frame(panel)
-        dir_row.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        dir_row.grid(row=1, column=0, sticky="ew", pady=(0, 12))
         panel.columnconfigure(0, weight=1)
 
         self.var_dir = tk.StringVar()
@@ -191,6 +298,7 @@ class Application(tk.Tk):
         ttk.Label(
             panel,
             text="Format: Show Name (Year) S01E01",
+            style="Caption.TLabel",
         ).grid(row=2, column=0, sticky="e")
 
         self.var_start = tk.StringVar(value="Dr. House (2004) S01E01")
@@ -199,7 +307,7 @@ class Application(tk.Tk):
         )
 
         # Buttons
-        btn_row = ttk.Frame(self, padding=(12, 6, 12, 6))
+        btn_row = ttk.Frame(self, padding=(24, 10, 24, 8))
         btn_row.pack(fill="x")
         ttk.Button(btn_row, text="Preview", command=self._preview).pack(
             side="left"
@@ -207,57 +315,72 @@ class Application(tk.Tk):
         self.btn_rename = ttk.Button(
             btn_row,
             text="Rename files",
-            state="disabled",
+            style="Primary.TButton",
             command=self._rename,
+            state="disabled",
         )
         self.btn_rename.pack(side="left", padx=(10, 0))
 
         # Separator
-        sep2 = tk.Frame(self, height=1, bg="#ccc")
-        sep2.pack(fill="x", pady=(4, 0))
+        sep2 = tk.Frame(self, height=1, bg=self.BORDER)
+        sep2.pack(fill="x")
 
-        # Output area
-        out_frame = ttk.Frame(self, padding=(12, 8, 12, 8))
-        out_frame.pack(fill="both", expand=True)
-        self.text_out = tk.Text(
-            out_frame,
-            height=10,
-            font=("Consolas", 9),
-            wrap="none",
+
+        # Preview table
+        tree_frame = ttk.Frame(self, padding=(24, 12, 24, 0))
+        tree_frame.pack(fill="both", expand=True)
+
+        cols = ("before", "after")
+        self.tree = ttk.Treeview(
+            tree_frame, columns=cols, show="headings", selectmode="none"
         )
-        text_scroll = tk.Scrollbar(
-            out_frame, orient="vertical", command=self.text_out.yview
+        self.tree.heading("before", text="Current filename")
+        self.tree.heading("after", text="New filename")
+        self.tree.column("before", width=340, anchor="w", stretch=True)
+        self.tree.column("after", width=340, anchor="w", stretch=True)
+        self.tree.tag_configure("conflict", foreground=self.DANGER)
+        self.tree.tag_configure("ok", foreground=self.TEXT)
+        self.tree.tag_configure("alt", background=self.ROW_ALT)
+
+        scrollbar = ttk.Scrollbar(
+            tree_frame, orient="vertical", command=self.tree.yview
         )
-        self.text_out.configure(yscrollcommand=text_scroll.set)
-        self.text_out.pack(side="left", fill="both", expand=True)
-        text_scroll.pack(side="right", fill="y")
+        self.tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.tree.pack(fill="both", expand=True)
 
         # Status bar
-        status_frame = ttk.Frame(self, padding=(12, 4, 12, 4))
-        status_frame.pack(fill="x")
+        sep3 = tk.Frame(self, height=1, bg=self.BORDER)
+        sep3.pack(fill="x")
         self.var_status = tk.StringVar(
-            value="Enter directory and start name, then click Preview."
+            value="Select a directory and enter a start name, then click Preview."
         )
         ttk.Label(
-            status_frame,
+            self,
             textvariable=self.var_status,
-            foreground="#555",
-            font=("Segoe UI", 9),
+            style="Status.TLabel",
+            padding=(24, 6),
         ).pack(anchor="w")
 
+    # ---- Handlers ---------------------------------------------------------
     def _browse(self):
-        path = filedialog.askdirectory(title="Select directory")
+        path = filedialog.askdirectory(
+            title="Select directory containing episode files"
+        )
         if path:
             self.var_dir.set(path)
 
     def _preview(self):
-        self.text_out.delete("1.0", "end")
-        self._pairs = []
+        self.tree.delete(*self.tree.get_children())
         self.btn_rename.configure(state="disabled")
+        self._pairs = []
 
         directory = self.var_dir.get().strip()
         if not directory or not os.path.isdir(directory):
-            messagebox.showerror("Invalid directory", "Please select a valid directory.")
+            messagebox.showerror(
+                "Invalid directory",
+                "Please select a valid directory.",
+            )
             return
 
         try:
@@ -270,29 +393,48 @@ class Application(tk.Tk):
 
         files = collect_video_files(directory)
         if not files:
-            self.var_status.set("No video files found in selected directory.")
+            self.var_status.set("No video files found in the selected directory.")
             return
 
         pairs = build_rename_pairs(files, show_name, year, season, start_ep)
+        conflicts = 0
+
+        for i, (old, new) in enumerate(pairs):
+            has_conflict = new.exists() and new != old
+            if has_conflict:
+                conflicts += 1
+            tag = "conflict" if has_conflict else ("alt" if i % 2 else "ok")
+            self.tree.insert(
+                "", "end", values=(old.name, new.name), tags=(tag,)
+            )
+
         self._pairs = pairs
 
-        for old, new in pairs:
-            self.text_out.insert("end", f"{old.name}\n")
-            self.text_out.insert("end", f"  → {new.name}\n\n")
-
-        self.var_status.set(
-            f"Preview: {len(pairs)} file(s) ready to rename."
-        )
+        parts = [f"{len(pairs)} file(s) ready to rename."]
+        if conflicts:
+            parts.append(f"{conflicts} conflict(s) highlighted in red.")
+        self.var_status.set("  ".join(parts))
         self.btn_rename.configure(state="normal")
 
     def _rename(self):
         if not self._pairs:
             return
 
+        conflicts = [
+            (o, n) for o, n in self._pairs if n.exists() and n != o
+        ]
+        if conflicts:
+            proceed = messagebox.askyesno(
+                "Conflicts detected",
+                f"{len(conflicts)} file(s) would be overwritten. Proceed anyway?",
+            )
+            if not proceed:
+                return
+
         success, errors = rename_files(self._pairs)
         self._pairs = []
         self.btn_rename.configure(state="disabled")
-        self.text_out.delete("1.0", "end")
+        self.tree.delete(*self.tree.get_children())
 
         if errors:
             messagebox.showwarning(
@@ -301,9 +443,7 @@ class Application(tk.Tk):
                 f"{len(errors)} error(s):\n" + "\n".join(errors),
             )
         else:
-            messagebox.showinfo(
-                "Done", f"{success} file(s) renamed successfully."
-            )
+            messagebox.showinfo("Done", f"{success} file(s) renamed successfully.")
 
         self.var_status.set(f"{success} file(s) renamed.")
 
@@ -313,12 +453,12 @@ class Application(tk.Tk):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Batch-rename TV episode files into a structured format."
+        description="Batch rename TV episode files into a structured format."
     )
     parser.add_argument(
         "--cli",
         action="store_true",
-        help="Run in command-line mode (no GUI).",
+        help="Run in command line mode (no GUI).",
     )
     parser.add_argument(
         "--dir",
