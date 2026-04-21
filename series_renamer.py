@@ -1,20 +1,33 @@
 #!/usr/bin/env python3
 """
 series_renamer.py
-------------------------
-Core logic + CLI + GUI with styling, Treeview table and conflict highlighting.
+-----------------
+Batch-rename TV episode files into a clean, structured format.
+
+GUI usage:  python series_renamer.py
+CLI usage:  python series_renamer.py --cli --dir /path/to/episodes --start "Dr. House (2004) S01E01"
 """
 
 import os
 import re
 import sys
 import argparse
+import logging
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 
 
 VIDEO_EXTENSIONS = {".mkv", ".mp4", ".avi", ".m4v", ".ts", ".mov", ".wmv", ".flv"}
+
+LOG = logging.getLogger(__name__)
+
+
+def configure_logging():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
 
 def parse_start_name(text: str) -> tuple[str, str, int, int]:
@@ -93,6 +106,7 @@ def rename_files(pairs: list[tuple[Path, Path]]) -> tuple[int, list[str]]:
             success += 1
         except OSError as exc:
             errors.append(f"{old.name}  ->  {exc}")
+            LOG.error("Rename failed: %s -> %s (%s)", old, new, exc)
     return success, errors
 
 
@@ -137,7 +151,7 @@ def run_cli(directory: str, start_name: str, dry_run: bool = False) -> None:
             print(f"  {err}")
 
 # ---------------------------------------------------------------------------
-# GUI interface (basic)
+# GUI interface
 # ---------------------------------------------------------------------------
 
 
@@ -157,10 +171,11 @@ class Application(tk.Tk):
         super().__init__()
         self.title("Series Renamer")
         self.minsize(820, 560)
+        self.configure(bg=self.BG)
         self._pairs: list[tuple[Path, Path]] = []
         self._build_styles()
         self._build_ui()
-    
+
     # ---- Styles -----------------------------------------------------------
     def _build_styles(self):
         style = ttk.Style(self)
@@ -258,12 +273,10 @@ class Application(tk.Tk):
         # Top bar
         top = ttk.Frame(self, padding=(24, 20, 24, 12))
         top.pack(fill="x")
-        ttk.Label(top, text="Series Renamer", style="Title.TLabel").pack(
-            anchor="w"
-        )
+        ttk.Label(top, text="Series Renamer", style="Title.TLabel").pack(anchor="w")
         ttk.Label(
             top,
-            text="Batch‑rename TV episode files into a structured format.",
+            text="Batch rename TV episode files into a structured format.",
             style="Caption.TLabel",
         ).pack(anchor="w", pady=(2, 0))
 
@@ -309,9 +322,7 @@ class Application(tk.Tk):
         # Buttons
         btn_row = ttk.Frame(self, padding=(24, 10, 24, 8))
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text="Preview", command=self._preview).pack(
-            side="left"
-        )
+        ttk.Button(btn_row, text="Preview", command=self._preview).pack(side="left")
         self.btn_rename = ttk.Button(
             btn_row,
             text="Rename files",
@@ -364,9 +375,7 @@ class Application(tk.Tk):
 
     # ---- Handlers ---------------------------------------------------------
     def _browse(self):
-        path = filedialog.askdirectory(
-            title="Select directory containing episode files"
-        )
+        path = filedialog.askdirectory(title="Select directory containing episode files")
         if path:
             self.var_dir.set(path)
 
@@ -377,16 +386,11 @@ class Application(tk.Tk):
 
         directory = self.var_dir.get().strip()
         if not directory or not os.path.isdir(directory):
-            messagebox.showerror(
-                "Invalid directory",
-                "Please select a valid directory.",
-            )
+            messagebox.showerror("Invalid directory", "Please select a valid directory.")
             return
 
         try:
-            show_name, year, season, start_ep = parse_start_name(
-                self.var_start.get()
-            )
+            show_name, year, season, start_ep = parse_start_name(self.var_start.get())
         except ValueError as exc:
             messagebox.showerror("Format error", str(exc))
             return
@@ -404,9 +408,7 @@ class Application(tk.Tk):
             if has_conflict:
                 conflicts += 1
             tag = "conflict" if has_conflict else ("alt" if i % 2 else "ok")
-            self.tree.insert(
-                "", "end", values=(old.name, new.name), tags=(tag,)
-            )
+            self.tree.insert("", "end", values=(old.name, new.name), tags=(tag,))
 
         self._pairs = pairs
 
@@ -420,9 +422,7 @@ class Application(tk.Tk):
         if not self._pairs:
             return
 
-        conflicts = [
-            (o, n) for o, n in self._pairs if n.exists() and n != o
-        ]
+        conflicts = [(o, n) for o, n in self._pairs if n.exists() and n != o]
         if conflicts:
             proceed = messagebox.askyesno(
                 "Conflicts detected",
@@ -452,6 +452,8 @@ class Application(tk.Tk):
 # ---------------------------------------------------------------------------
 
 def main():
+    configure_logging()
+
     parser = argparse.ArgumentParser(
         description="Batch rename TV episode files into a structured format."
     )
